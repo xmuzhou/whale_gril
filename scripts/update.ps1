@@ -1095,6 +1095,25 @@ try {
     if ($asset.size) { Say ('  安装包：' + $asset.name + '（' + (Format-Size ([long]$asset.size)) + '）') 'Gray' }
 
     $cmp = Compare-Ver $remoteVer $localVer
+    # 版本号规则变过（3.55.1 → 3.6.0 数值上反而更小），用发行时间兜底
+    if ($cmp -lt 0 -and -not $Tag -and $rel.published_at) {
+        try {
+            $inv = [Globalization.CultureInfo]::InvariantCulture
+            $pub = [datetime]::Parse([string]$rel.published_at, $inv, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
+            $stamp = $null
+            foreach ($f in @('server.js', 'package.json')) {
+                $q = Join-Path $script:appRoot $f
+                if (Test-Path -LiteralPath $q) {
+                    $t = (Get-Item -LiteralPath $q).LastWriteTimeUtc
+                    if (-not $stamp -or $t -gt $stamp) { $stamp = $t }
+                }
+            }
+            if ($stamp -and $pub -gt $stamp.AddMinutes(30)) {
+                $cmp = 1
+                Say ('  ⚠ 版本号看起来变小（' + $localVer + ' → ' + $remoteVer + '），但发行时间 ' + $pub.ToString('yyyy-MM-dd HH:mm') + 'Z 比本地代码新，按新版本处理。') 'Yellow'
+            }
+        } catch { }
+    }
     if ($cmp -le 0 -and -not $Force) {
         Say ''
         if ($Tag -and $cmp -lt 0) {
